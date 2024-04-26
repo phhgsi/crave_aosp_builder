@@ -419,6 +419,7 @@ jobs:
       continue-on-error: true
       run: |
         cd $PROJECTFOLDER
+        export GH_UPLOAD_LIMIT=3147483648
 
         if [[ -n "${{ secrets.GH_UPLOAD_LIMIT }}" ]]; then
           export GH_UPLOAD_LIMIT="${{ secrets.GH_UPLOAD_LIMIT }}"
