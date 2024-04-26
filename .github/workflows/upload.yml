@@ -9,6 +9,14 @@ jobs:
   Start-Runner:
     runs-on: ubuntu-latest
 
+    inputs:
+      project-folder:
+        description: 'The path to the project folder'
+        required: true
+      device-name:
+        description: 'The name of the device'
+        required: true
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -44,3 +52,14 @@ jobs:
             tmux send-keys -t ghactions './actions-runner/run.sh' Enter; 
             echo 'Runner Started'; 
           fi"
+
+      # Upload to Telegram
+      - name: Upload Using telegram-upload
+        run: |
+          cd ${{ inputs.project-folder }}
+          crave ssh -- "bash /opt/crave/telegram/upload.sh '${{ inputs.device-name }}' '${{ secrets.EXTRA_FILES }}'"
+        continue-on-error: true
+        env:
+          PROJECT_FOLDER: ${{ inputs.project-folder }}
+          DEVICE_NAME: ${{ inputs.device-name }}
+          EXTRA_FILES: ${{ secrets.EXTRA_FILES }}
