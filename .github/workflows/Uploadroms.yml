@@ -1,14 +1,6 @@
-#
-# Copyright (C) 2024 Antonino Scordino
-# Copyright (C) 2024 Souhrud Reddy
-#
-# SPDX-License-Identifier: Apache-2.0
-#
-
-name: Crave Uploader
+name: Crave Builder(self-hosted)
 on:
   workflow_dispatch:
-    # Various inputs to simplify usage of workflow.
     inputs:
       BASE_PROJECT:
         description: 'Choose a base project:'
@@ -24,13 +16,6 @@ on:
           - 'PixelOS 14'
           - 'LineageOS 16.0'
           - 'CyanogenMOD 14.1'
-      BUILD_DIFFERENT_ROM:
-        description: "Command to initialize a different 'repo' project:"
-        required: false
-        default: "echo 'Build Starting!'"
-      REMOVALS:
-        description: "Folders to be removed before syncing:"
-        required: false
       LOCAL_MANIFEST:
         description: "Personal local manifest [repository or raw]:"
         required: true
@@ -70,13 +55,11 @@ on:
         - 'no'
 
 jobs:
-  Start-Runner:
-    runs-on: ubuntu-latest
-
+  build:
+    timeout-minutes: 720      
+    name: Build using foss.crave.io
+    runs-on: self-hosted
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v2
-
     - name: Set up environment
       run: |
         sudo apt-get update
@@ -85,21 +68,24 @@ jobs:
       # Download and configure 'crave'.
     - name: Configure the 'crave' environment
       run: |
-        if [ "${DCDEVSPACE}" == "1" ]; then
-        echo 'No need to set up crave, we are already running in devspace!'
-        else
-          mkdir ${HOME}/bin/
-          curl -s https://raw.githubusercontent.com/accupara/crave/master/get_crave.sh | bash -s --
-          mv ${PWD}/crave ${HOME}/bin/
-          sudo ln -sf /home/${USER}/bin/crave /usr/bin/crave
-          envsubst < ${PWD}/crave.conf.sample >> ${PWD}/crave.conf
-          rm -rf ${PWD}/crave.conf.sample          
-        fi
+        mkdir ${HOME}/bin/
+        curl -s https://raw.githubusercontent.com/accupara/crave/master/get_crave.sh | bash -s --
+        mv ${PWD}/crave ${HOME}/bin/
+        sudo ln -sf /home/${USER}/bin/crave /usr/bin/crave
+        envsubst < ${PWD}/crave.conf.sample >> ${PWD}/crave.conf
+        rm -rf ${PWD}/crave.conf.sample
       env:
-        CRAVE_USERNAME: ${{  secrets.CRAVE_USERNAME  }}
-        CRAVE_TOKEN: ${{  secrets.CRAVE_TOKEN  }}
+        CRAVE_USERNAME: ${{ secrets.CRAVE_USERNAME }}
+        CRAVE_TOKEN: ${{ secrets.CRAVE_TOKEN }}
 
-    - name: Run crave devspace
+    - name: Set-up workspace environment
+      run: |
+        mkdir -p devspace
+        sudo mkdir -p /crave-devspaces
+        sudo ln -sf ${PWD}/devspace /crave-devspaces
+        sudo chmod 777 /crave-devspaces
+
+    - name: Start compilation through 'crave'
       run: |
         crave devspace -- "if tmux has-session -t ghactions; then 
           echo "Runner is already Running" 
@@ -109,133 +95,10 @@ jobs:
           tmux send-keys -t ghactions './actions-runner/run.sh' Enter 
           echo "Runner Started"
         fi "
-  prepare:
-    name: Prepare for Building
-    runs-on: ubuntu-latest
-    steps:
-    - name: Set Project variables
-      id: proj-variables
+
+    # Your build steps here...
+
+    - name: Upload to Salesforce
       run: |
-        case "${{ github.event.inputs.BASE_PROJECT }}" in
-        "ArrowOS 13.1")
-          export PROJECTFOLDER="/crave-devspaces/Arrow13"
-          export PROJECTID="73"
-          export REPO_INIT="repo init -u https://github.com/ArrowOS/android_manifest.git -b arrow-13.1 --depth=1"
-
-        ;;
-        "DerpFest 13.0")
-          export PROJECTFOLDER="/crave-devspaces/DerpFest13"
-          export PROJECTID="64"
-          export REPO_INIT="repo init -u https://github.com/DerpFest-AOSP/manifest.git -b 13 --depth=1"
-        ;;
-        "LineageOS 21.0")
-          export PROJECTFOLDER="/crave-devspaces/Lineage21"
-          export PROJECTID="72"
-          export REPO_INIT="repo init -u https://github.com/LineageOS/android.git -b lineage-21.0 --git-lfs --depth=1"
-        ;;
-        "LineageOS 20.0")
-          export PROJECTFOLDER="/crave-devspaces/Lineage20"
-          export PROJECTID="36"
-          export REPO_INIT="repo init -u https://github.com/accupara/los20.git -b lineage-20.0 --git-lfs --depth=1"
-        ;;
-        "CipherOS 14")
-          export PROJECTFOLDER="/crave-devspaces/Cipher14"
-          export PROJECTID="79"
-          export REPO_INIT="repo init -u https://github.com/CipherOS/android_manifest.git -b fourteen --git-lfs --depth=1"
-        ;;
-        "PixelOS 14")
-          export PROJECTFOLDER="/crave-devspaces/Pixel14"
-          export PROJECTID="82"
-          export REPO_INIT="repo init -u https://github.com/PixelOS-AOSP/manifest.git -b fourteen --git-lfs --depth=1"
-        ;;
-        "LineageOS 16.0")
-          export PROJECTFOLDER="/crave-devspaces/Lineage16"
-          export PROJECTID="81"
-          export REPO_INIT="repo init -u https://github.com/accupara/los16.git -b lineage-16.0 --git-lfs --depth=1"
-        ;;
-        "CyanogenMOD 14.1")
-          export PROJECTFOLDER="/crave-devspaces/Cyanogen14"
-          export PROJECTID="83"
-          export REPO_INIT="repo init -u https://github.com/accupara/los-cm14.1.git -b cm-14.1 --git-lfs --depth=1"
-        ;;
-        esac
-        echo "Building on ${{ github.event.inputs.BASE_PROJECT }} project"
-        echo "PROJECTFOLDER=$PROJECTFOLDER" >> "$GITHUB_OUTPUT"
-        echo "PROJECTID=$PROJECTID"  >> "$GITHUB_OUTPUT"
-        echo "REPO_INIT=$REPO_INIT" >> "$GITHUB_OUTPUT"
-    outputs:
-      PROJECTFOLDER: ${{ steps.proj-variables.outputs.PROJECTFOLDER }}
-      PROJECTID: ${{ steps.proj-variables.outputs.PROJECTID }}
-      REPO_INIT: ${{ steps.proj-variables.outputs.REPO_INIT }}
-
-  test:
-    name: Test Local Manifests
-    needs: prepare
-    runs-on: ubuntu-latest
-    steps:
-      # Accept Project Variables
-    - name: Set Repo Project
-      run: |
-        PROJECTFOLDER="${{ needs.prepare.outputs.PROJECTFOLDER }}"
-        PROJECTID="${{ needs.prepare.outputs.PROJECTID }}"
-        REPO_INIT="${{ needs.prepare.outputs.REPO_INIT }}"
-
-        echo "PROJECTFOLDER=$PROJECTFOLDER" >> "$GITHUB_ENV"
-        echo "PROJECTID=$PROJECTID"  >> "$GITHUB_ENV"
-        echo "REPO_INIT=$REPO_INIT" >> "$GITHUB_ENV"
-
-      # Download and configure 'repo'.
-    - name: Configure the 'repo' environment
-      run: |
-        # Check if repo is already installed
-        if ! command -v repo >/dev/null 2>&1; then
-          echo "Repo not found. Installing now..."
-          # Create bin directory if it doesn't exist
-          mkdir -p ~/bin
-          # Download repo script
-          curl https://storage.googleapis.com/git-repo-downloads/repo >> ~/bin/repo
-          # Make repo script executable
-          chmod a+x ~/bin/repo
-          # Create symbolic link to /usr/bin/repo
-          sudo ln -sf "/home/$(whoami)/bin/repo" "/usr/bin/repo"
-          echo "Repo installation complete."
-        else
-          echo "Repo already installed."
-        fi
-      continue-on-error: true
-      
-      # Generate 'git' credential in base of the workflow's author.
-    - name: Set-up 'git' credential(s)
-      run: |
-        git config --global user.name "${{ github.actor }}"
-        git config --global user.email "${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com"
-
-      # Test Your Personal 'Local Manifests' against The ROM
-    - name: Test Local Manifests
-      if: ${{ github.event.inputs.BUILD_DIFFERENT_ROM != 'skip' }}
-      run: |
-        rm -rf tester
-        mkdir tester
-        cd tester 
-        if [ "${{ github.event.inputs.BUILD_DIFFERENT_ROM }}" == "echo 'Build Starting!'" ]; then
-          $REPO_INIT
-        else
-          ${{ github.event.inputs.BUILD_DIFFERENT_ROM }}
-        fi 
-        git clone ${{ github.event.inputs.LOCAL_MANIFEST }} --depth 1 -b ${{ github.event.inputs.LOCAL_MANIFEST_BRANCH }} .repo/local_manifests && \
-
-        if [ ! $? == 0 ]; then \
-          curl -o .repo/local_manifests ${{ github.event.inputs.LOCAL_MANIFEST }}; \
-          echo "Git clone failed, downloading through curl instead..."; \ 
-        fi \
-    
-        timeout 1m repo sync --force-sync || { exit_code=$?; [ $exit_code -eq 124 ] || (echo "Error: Process failed with exit code $exit_code"; exit $exit_code); }
-        du -csh . # Output Size when done
-        rm -rf .repo
-      timeout-minutes: 10
-    outputs:
-      PROJECTFOLDER: ${{ needs.prepare.outputs.PROJECTFOLDER }}
-      PROJECTID: ${{ needs.prepare.outputs.PROJECTID }}
-      REPO_INIT: ${{ needs.prepare.outputs.REPO_INIT }}
-
-  
+        # Replace this command with the one that uploads the zip files to Salesforce
+        echo "Uploading zip files to Salesforce..."
